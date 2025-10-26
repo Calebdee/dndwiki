@@ -1,0 +1,161 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+
+body.dark {
+  background-color: #1a202c; /* dark gray */
+  color: #e2e8f0; /* light text */
+}
+
+
+.ql-toolbar {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ql-container {
+    min-height: 250px; 
+}
+
+.ql-container table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.ql-container table td,
+.ql-container table th {
+  border: 1px solid #ccc;
+  padding: 6px;
+  min-width: 50px;
+}
+
+.ql-container table th {
+  background: #f9f9f9;
+  font-weight: bold;
+}
+
+.ql-editor img {
+  max-width: 100%;
+  max-height: 250px; /* adjust as desired */
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  display: block;
+}
+
+.ql-editor a,
+.prose a {
+  color: #0645ad;            /* Wikipedia's signature link blue */
+  text-decoration: underline;
+}
+
+.ql-editor a:hover,
+.prose a:hover {
+  color: #0b0080;            /* Darker blue on hover */
+  text-decoration: underline;
+}
+
+.prose img {
+  max-width: 100%;
+  max-height: 250px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+  display: block;
+}
+
+
+@media (min-width: 768px) {
+    .ql-container {
+        min-height: 400px;
+    }
+}
+
+.page-container {
+  margin-left: 3%;
+  margin-right: 3%;
+}
+
+details {
+  margin: 0.5rem 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  background-color: #f9fafb;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.internal-link {
+  color: #2563eb; /* Tailwind blue-600 */
+  text-decoration: none;
+}
+
+.internal-link:hover {
+  color: #1d4ed8; /* Tailwind blue-700 */
+  text-decoration: underline;
+}
+
+/* Make sure Quill toolbar can expand dropdowns properly */
+.ql-toolbar {
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 50 !important; /* ensures dropdown appears over editor */
+}
+
+.ql-toolbar .ql-picker {
+  z-index: 60 !important;
+}
+
+.ql-toolbar .ql-picker-options {
+  z-index: 9999 !important;
+  position: absolute !important;
+  overflow: visible !important;
+
+  /* ✅ Visually distinct background for both modes */
+  background-color: #ffffff !important; /* default light mode */
+  color: #111827 !important; /* dark gray text for readability */
+  border: 1px solid #cbd5e1 !important; /* subtle border (slate-300) */
+  border-radius: 0.25rem !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* --- Dark mode override --- */
+body.dark .ql-toolbar .ql-picker-options {
+  background-color: #1f2937 !important; /* slate-800 */
+  color: #f9fafb !important; /* near white text */
+  border-color: #374151 !important; /* slate-700 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+/* Center all images in wiki article content */
+article.prose img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-radius: 0.5rem; /* optional: gives them rounded corners */
+  max-width: 100%;
+  height: auto;
+}
+
+/* Optional: dark mode tweak if you want a light border around images */
+body.dark article.prose img {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
