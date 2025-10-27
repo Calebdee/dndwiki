@@ -2,6 +2,7 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
+    Boolean,
     Text,
     ForeignKey,
     TIMESTAMP,
@@ -100,8 +101,11 @@ class JournalEntry(Base):
     journal_id = Column(Integer, ForeignKey("journals.id"), nullable=False)
     content = Column(Text, nullable=False)
     order_index = Column(Integer, default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    is_private = Column(Boolean, default=False)
 
     journal = relationship("Journal", back_populates="entries")
+    user = relationship("User")
 

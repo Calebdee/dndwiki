@@ -1,11 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, Form, UploadFile, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-
+import json
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
+
 import os, shutil, logging, re
 
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
@@ -13,12 +16,13 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from database import Base, engine, SessionLocal
 import models, schemas
 from schemas import JournalCreate, JournalEntryCreate
-from models import Journal, JournalEntry
+from models import Journal, JournalEntry, User
 
 from auth import (
     router as auth_router,
     get_current_user,
     get_optional_user,
+    get_current_user_optional
 )
 
 # --- Email Config ---
@@ -61,6 +65,31 @@ app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 
 # --- Include Auth ---
 app.include_router(auth_router, prefix="/api")
+
+# Keep track of active websocket connections per journal
+active_connections: Dict[int, List[WebSocket]] = {}
+
+@app.websocket("/ws/journals/{journal_id}")
+async def websocket_endpoint(websocket: WebSocket, journal_id: int):
+    await websocket.accept()
+
+    # Ensure list exists
+    if journal_id not in active_connections:
+        active_connections[journal_id] = []
+    active_connections[journal_id].append(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()  # just keep alive
+    except WebSocketDisconnect:
+        # Only remove if it's still in the list
+        if journal_id in active_connections and websocket in active_connections[journal_id]:
+            active_connections[journal_id].remove(websocket)
+
+            # Clean up empty list
+            if not active_connections[journal_id]:
+                del active_connections[journal_id]
+
 
 # --- Database dependency ---
 def get_db():
@@ -183,7 +212,6 @@ def list_user_pages(
     return query.order_by(models.Page.title.asc()).all()
 
 
-import json
 
 @app.get("/api/pages/{slug}", response_model=schemas.Page)
 def get_page(
@@ -411,33 +439,136 @@ def get_journals(db: Session = Depends(get_db)):
 
 # --- Get one journal with entries ---
 @app.get("/api/journals/{journal_id}")
-def get_journal(journal_id: int, db: Session = Depends(get_db)):
+def get_journal(
+    journal_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
     journal = db.query(Journal).filter(Journal.id == journal_id).first()
     if not journal:
         raise HTTPException(status_code=404, detail="Journal not found")
-    entries = db.query(JournalEntry).filter(JournalEntry.journal_id == journal_id).order_by(JournalEntry.order_index).all()
-    return {"journal": journal, "entries": entries}
 
-# --- Add entry ---
+    q = db.query(JournalEntry, User.username).join(User, User.id == JournalEntry.created_by, isouter=True)
+    q = q.filter(JournalEntry.journal_id == journal_id)
+
+    # 👇 Filter out private messages not created by current user
+    if not current_user:
+        q = q.filter(JournalEntry.is_private == False)
+    else:
+        q = q.filter(
+            or_(
+                JournalEntry.is_private == False,
+                JournalEntry.created_by == current_user.id
+            )
+        )
+
+    entries = q.order_by(JournalEntry.order_index).all()
+    entries_with_user = [
+        {
+            "id": e.JournalEntry.id,
+            "content": e.JournalEntry.content,
+            "created_at": e.JournalEntry.created_at,
+            "created_by_username": e.username,
+            "is_private": e.JournalEntry.is_private,
+        }
+        for e in entries
+    ]
+
+    return {"journal": journal, "entries": entries_with_user}
+
+
+class EntryCreate(BaseModel):
+    content: str
+    is_private: Optional[bool] = False  # 👈 New field
+
+import asyncio
+import json
+from fastapi import BackgroundTasks
+
 @app.post("/api/journals/{journal_id}/entries")
-def add_entry(journal_id: int, entry: JournalEntryCreate, db: Session = Depends(get_db)):
+def add_entry(
+    journal_id: int,
+    entry: EntryCreate,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+    current_user: models.User = Depends(get_current_user),
+):
     count = db.query(JournalEntry).filter(JournalEntry.journal_id == journal_id).count()
-    new_entry = JournalEntry(journal_id=journal_id, content=entry.content, order_index=count)
+
+    new_entry = JournalEntry(
+        journal_id=journal_id,
+        content=entry.content,
+        order_index=count,
+        created_by=current_user.id,
+        is_private=bool(entry.is_private),
+    )
     db.add(new_entry)
     db.commit()
     db.refresh(new_entry)
-    return new_entry
+
+    creator = db.query(models.User).filter(models.User.id == new_entry.created_by).first()
+    entry_data = {
+        "id": new_entry.id,
+        "content": new_entry.content,
+        "created_at": new_entry.created_at.isoformat() + "Z",
+        "created_by_username": creator.username if creator else "Unknown",
+        "is_private": new_entry.is_private,
+    }
+
+    # ---- Broadcast only if public ----
+    if not new_entry.is_private and journal_id in active_connections:
+        payload = json.dumps({"event": "new_entry", "data": entry_data})
+
+        async def send_to_all():
+            print(f"[Broadcast] Journal {journal_id}: sending to {len(active_connections[journal_id])} clients")
+            for ws in list(active_connections[journal_id]):
+                try:
+                    await ws.send_text(payload)
+                except Exception as e:
+                    print(f"[Broadcast error] {e}")
+
+        try:
+            asyncio.create_task(send_to_all())
+        except RuntimeError:
+            # If we're in a threadpool (no event loop), use background_tasks
+            if background_tasks:
+                background_tasks.add_task(asyncio.run, send_to_all())
+
+    else:
+        print(f"[Broadcast skipped] Private={new_entry.is_private}")
+
+    return entry_data
+
+
 
 # --- Update entry ---
+class EntryUpdate(BaseModel):
+    content: str
+
 @app.put("/api/journal-entries/{entry_id}")
-def update_entry(entry_id: int, content: str, db: Session = Depends(get_db)):
-    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
-    if not entry:
+def update_entry(
+    entry_id: int,
+    entry: EntryUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    if not db_entry:
         raise HTTPException(status_code=404, detail="Entry not found")
-    entry.content = content
+
+    db_entry.content = entry.content
     db.commit()
-    db.refresh(entry)
-    return entry
+    db.refresh(db_entry)
+
+    creator = db.query(models.User).filter(models.User.id == db_entry.created_by).first()
+    username = creator.username if creator else "Unknown"
+
+    return {
+        "id": db_entry.id,
+        "content": db_entry.content,
+        "created_at": db_entry.created_at,
+        "created_by_username": username
+    }
 
 @app.get("/api/journals")
 def get_all_journals(db: Session = Depends(get_db)):
@@ -454,4 +585,47 @@ def create_journal(journal: JournalCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_journal)
     return {"id": new_journal.id, "title": new_journal.title}
+
+@app.delete("/api/journal-entries/{entry_id}")
+def delete_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    db_entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    if not db_entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    # Only allow deletion by the creator or admins
+    if db_entry.created_by != current_user.id and getattr(current_user, "role", None) != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this entry")
+
+    db.delete(db_entry)
+    db.commit()
+
+    # --- Broadcast deletion over WebSocket ---
+    if db_entry.journal_id in active_connections:
+        payload = json.dumps({"event": "delete_entry", "data": {"id": entry_id}})
+        for ws in active_connections[db_entry.journal_id]:
+            try:
+                asyncio.create_task(ws.send_text(payload))
+            except Exception:
+                pass
+
+    return {"message": "Entry deleted successfully"}
+
+@app.put("/api/journal-entries/{entry_id}/privacy")
+def update_entry_privacy(entry_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if entry.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this entry")
+
+    entry.is_private = not entry.is_private
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
 
