@@ -1,12 +1,10 @@
-version: "3.8"
-
 services:
   wiki-backend:
     build: ./backend
     container_name: dndwiki-wiki-backend
     volumes:
-      - /var/services/web/dndwiki/data:/app/data
-      - /var/services/web/dndwiki/frontend/public/images:/app/images  # shared images folder
+      - ./data:/app/data
+      - ./frontend/public/images:/app/images
     ports:
       - "8085:8085"
     restart: unless-stopped
@@ -16,7 +14,7 @@ services:
   wiki-frontend:
     build: ./frontend
     volumes:
-      - /var/services/web/dndwiki/frontend/public/images:/app/images
+      - ./frontend/public/images:/app/images
     ports:
       - "3000:3000"
     depends_on:

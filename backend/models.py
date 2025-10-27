@@ -81,3 +81,27 @@ class UserSettings(Base):
     display_name = Column(String, nullable=True)
 
     user = relationship("User", back_populates="settings")
+    
+class Journal(Base):
+    __tablename__ = "journals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    entries = relationship("JournalEntry", back_populates="journal", cascade="all, delete-orphan")
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    journal_id = Column(Integer, ForeignKey("journals.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    journal = relationship("Journal", back_populates="entries")
+

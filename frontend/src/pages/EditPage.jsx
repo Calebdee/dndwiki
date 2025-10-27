@@ -42,6 +42,7 @@ export default function EditPage() {
   const [visibility, setVisibility] = useState("public")
   const [accessType, setAccessType] = useState("private")
   const [loading, setLoading] = useState(true)
+  const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState(null)
 
   const [allSlugs, setAllSlugs] = useState([])
@@ -212,28 +213,43 @@ useEffect(() => {
   async function handleUpdate() {
     const token = localStorage.getItem("access_token")
     if (!token) return alert("You must be logged in.")
+  
+    setIsUpdating(true) // 🔹 Start loading
+  
     const updatedInfo = info.map(([k], i) => [k, fieldRefs.current[i]?.innerHTML || ""])
     const infoObj = Object.fromEntries(updatedInfo)
-    const res = await fetch(`/api/pages/${slug}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        title,
-        content,
-        main_image: mainImage,
-        info: JSON.stringify(infoObj),
-        visibility,
-        access_type: accessType,
-      }),
-    })
-    if (res.ok) {
-      alert("✅ Page updated successfully!")
-      navigate(`/${slug}`)
-    } else alert("Failed to update page.")
+  
+    try {
+      const res = await fetch(`/api/pages/${slug}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title,
+          content,
+          main_image: mainImage,
+          info: JSON.stringify(infoObj),
+          visibility,
+          access_type: accessType,
+        }),
+      })
+  
+      if (res.ok) {
+        alert("✅ Page updated successfully!")
+        navigate(`/${slug}`)
+      } else {
+        const msg = await res.text()
+        alert(`Failed to update page: ${msg}`)
+      }
+    } catch (err) {
+      alert("Network error: " + err.message)
+    } finally {
+      setIsUpdating(false) // 🔹 End loading
+    }
   }
+  
 
   if (loading) return <p className="text-center mt-10 text-gray-500 dark:text-gray-400">Loading...</p>
   if (error) return <p className="text-center mt-10 text-red-500">{error}</p>
@@ -437,6 +453,13 @@ useEffect(() => {
       >
         Update Page
       </button>
+      {isUpdating && (
+      <div className="fixed inset-0 bg-black/70 flex flex-col items-center justify-center z-50 text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-4"></div>
+        <p className="text-lg font-medium">Updating page...</p>
+      </div>
+    )}
+
     </div>
   )
 }

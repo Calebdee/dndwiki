@@ -68,3 +68,10 @@ class UserSettingsResponse(UserSettingsBase):
 
     class Config:
         from_attributes = True
+
+class JournalCreate(BaseModel):
+    title: str
+    
+
+class JournalEntryCreate(BaseModel):
+    content: str

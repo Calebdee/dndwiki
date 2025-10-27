@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 export default function HomePage() {
   const [pages, setPages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [journals, setJournals] = useState([])
   const [intro, setIntro] = useState(
     "Welcome to the self-hosted wiki for a Dungeons & Dragons world. Explore the pages below to learn about its history, characters, and adventures."
   )
@@ -22,6 +23,13 @@ export default function HomePage() {
     .catch(console.error)
     .finally(() => setLoading(false))
 }, [])
+useEffect(() => {
+  fetch("/api/journals")
+    .then(res => res.json())
+    .then(setJournals)
+    .catch(console.error)
+}, [])
+
 
 
   const totalPages = Math.ceil(pages.length / perPage)
@@ -47,20 +55,21 @@ export default function HomePage() {
         {intro}
       </p>
 
-      <div className="text-center md:text-left">
-        <button
-          onClick={handleCreatePage}
-          className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md font-medium transition"
-        >
-          ➕ Create a New Page
-        </button>
-      </div>
+
+      {/* --- Pages + Journals Grid --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
 
       {/* --- Existing Pages --- */}
-      <div>
-        <h2 className="text-2xl font-semibold mb-3 text-center md:text-left">
-          Existing Pages
-        </h2>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-semibold">Existing Pages</h2>
+          <button
+            onClick={handleCreatePage}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition"
+          >
+            ➕ Create Page
+          </button>
+        </div>
 
         {loading ? (
           <p className="text-gray-500 dark:text-gray-400">Loading pages...</p>
@@ -114,6 +123,57 @@ export default function HomePage() {
             )}
           </>
         )}
+      </div>
+
+      {/* --- Journals Section --- */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-semibold">Notes</h2>
+          <button
+            onClick={async () => {
+              if (!isLoggedIn) return setShowLoginDialog(true)
+              const title = prompt("Enter a title for the new journal:")
+              if (!title) return
+              const res = await fetch("/api/journals", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+                },
+                body: JSON.stringify({ title }),
+              })
+              if (res.ok) {
+                const data = await res.json()
+                window.location.href = `/journals/${data.id}`
+              } else {
+                alert("Failed to create journal.")
+              }
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition"
+          >
+            ➕ Create Journal
+          </button>
+        </div>
+
+        {journals.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400">
+            No journals yet. Create one!
+          </p>
+        ) : (
+          <ul className="list-disc pl-6 space-y-1">
+            {journals.map(j => (
+              <li key={j.id}>
+                <a
+                  href={`/journals/${j.id}`}
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {j.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       </div>
 
       {/* Login Required Dialog */}

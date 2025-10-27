@@ -12,6 +12,9 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 
 from database import Base, engine, SessionLocal
 import models, schemas
+from schemas import JournalCreate, JournalEntryCreate
+from models import Journal, JournalEntry
+
 from auth import (
     router as auth_router,
     get_current_user,
@@ -400,4 +403,55 @@ def list_allowed_users(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     return [{"id": u.id, "username": u.username} for u in page.allowed_users]
+
+# --- Get all journals ---
+@app.get("/api/journals")
+def get_journals(db: Session = Depends(get_db)):
+    return db.query(Journal).all()
+
+# --- Get one journal with entries ---
+@app.get("/api/journals/{journal_id}")
+def get_journal(journal_id: int, db: Session = Depends(get_db)):
+    journal = db.query(Journal).filter(Journal.id == journal_id).first()
+    if not journal:
+        raise HTTPException(status_code=404, detail="Journal not found")
+    entries = db.query(JournalEntry).filter(JournalEntry.journal_id == journal_id).order_by(JournalEntry.order_index).all()
+    return {"journal": journal, "entries": entries}
+
+# --- Add entry ---
+@app.post("/api/journals/{journal_id}/entries")
+def add_entry(journal_id: int, entry: JournalEntryCreate, db: Session = Depends(get_db)):
+    count = db.query(JournalEntry).filter(JournalEntry.journal_id == journal_id).count()
+    new_entry = JournalEntry(journal_id=journal_id, content=entry.content, order_index=count)
+    db.add(new_entry)
+    db.commit()
+    db.refresh(new_entry)
+    return new_entry
+
+# --- Update entry ---
+@app.put("/api/journal-entries/{entry_id}")
+def update_entry(entry_id: int, content: str, db: Session = Depends(get_db)):
+    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    entry.content = content
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+@app.get("/api/journals")
+def get_all_journals(db: Session = Depends(get_db)):
+    journals = db.query(Journal).order_by(Journal.created_at.desc()).all()
+    return [{"id": j.id, "title": j.title} for j in journals]
+
+@app.post("/api/journals")
+def create_journal(journal: JournalCreate, db: Session = Depends(get_db)):
+    if not journal.title.strip():
+        raise HTTPException(status_code=400, detail="Title required")
+
+    new_journal = Journal(title=journal.title.strip())
+    db.add(new_journal)
+    db.commit()
+    db.refresh(new_journal)
+    return {"id": new_journal.id, "title": new_journal.title}
 

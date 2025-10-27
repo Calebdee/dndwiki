@@ -9,6 +9,7 @@ import SearchPage from "./pages/SearchPage"
 import LoginPage from "./pages/LoginPage"
 import ProfilePage from "./pages/ProfilePage"
 import SettingsPage from "./pages/SettingsPage"
+import JournalPage from "./pages/JournalPage"
 
 export default function App() {
   const [theme, setTheme] = useState("light")
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/profile/:username" element={<ProfilePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/journals/:journalId" element={<JournalPage />} />
         </Routes>
       </div>
     </Router>
